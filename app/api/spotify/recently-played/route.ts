@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server"
 import { getSession } from "@/lib/auth"
+import { spotifyApi } from "@/lib/spotify-api"
 
 export async function GET() {
   const session = await getSession()
@@ -9,17 +10,7 @@ export async function GET() {
   }
 
   try {
-    const response = await fetch("https://api.spotify.com/v1/me/player/recently-played?limit=10", {
-      headers: {
-        Authorization: `Bearer ${session.accessToken}`,
-      },
-    })
-
-    if (!response.ok) {
-      throw new Error(`Spotify API error: ${response.status}`)
-    }
-
-    const data = await response.json()
+    const data = await spotifyApi.getRecentlyPlayed(session.accessToken, 10)
     return NextResponse.json(data)
   } catch (error) {
     console.error("Error fetching recently played:", error)

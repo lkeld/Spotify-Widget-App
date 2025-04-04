@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server"
 import { getSession } from "@/lib/auth"
+import { spotifyApi } from "@/lib/spotify-api"
 
 export async function PUT(request: Request) {
   const session = await getSession()
@@ -12,67 +13,40 @@ export async function PUT(request: Request) {
     const body = await request.json()
     const { action } = body
 
-    let endpoint = ""
-    const method = "PUT"
-    let payload = {}
-
     switch (action) {
       case "toggle-play":
-        // Check current state first
-        const stateResponse = await fetch("https://api.spotify.com/v1/me/player", {
-          headers: {
-            Authorization: `Bearer ${session.accessToken}`,
-          },
-        })
-
-        if (stateResponse.status !== 204) {
-          const stateData = await stateResponse.json()
-          endpoint = `https://api.spotify.com/v1/me/player/${stateData.is_playing ? "pause" : "play"}`
+        // Check if explicit play/pause state is specified
+        if (body.state !== undefined) {
+          await spotifyApi.togglePlayback(session.accessToken, body.state)
         } else {
-          // Default to play if no state
-          endpoint = "https://api.spotify.com/v1/me/player/play"
+          // Get current state and toggle
+          const playbackData = await spotifyApi.getCurrentPlayback(session.accessToken) as { is_playing: boolean };
+          await spotifyApi.togglePlayback(session.accessToken, !playbackData.is_playing)
         }
         break
 
       case "volume":
-        endpoint = `https://api.spotify.com/v1/me/player/volume?volume_percent=${body.volume_percent}`
+        await spotifyApi.setVolume(session.accessToken, body.volume_percent)
         break
 
       case "seek":
-        endpoint = `https://api.spotify.com/v1/me/player/seek?position_ms=${body.position_ms}`
+        await spotifyApi.seekToPosition(session.accessToken, body.position_ms)
         break
 
       case "transfer":
-        endpoint = "https://api.spotify.com/v1/me/player"
-        payload = {
-          device_ids: [body.device_id],
-          play: true,
-        }
+        await spotifyApi.transferPlayback(session.accessToken, body.device_id, body.play !== false)
         break
 
       case "shuffle":
-        endpoint = `https://api.spotify.com/v1/me/player/shuffle?state=${body.state}`
+        await spotifyApi.setShuffleState(session.accessToken, body.state)
         break
 
       case "repeat":
-        endpoint = `https://api.spotify.com/v1/me/player/repeat?state=${body.state}`
+        await spotifyApi.setRepeatState(session.accessToken, body.state)
         break
 
       default:
         return NextResponse.json({ error: "Invalid action" }, { status: 400 })
-    }
-
-    const response = await fetch(endpoint, {
-      method,
-      headers: {
-        Authorization: `Bearer ${session.accessToken}`,
-        "Content-Type": "application/json",
-      },
-      body: Object.keys(payload).length ? JSON.stringify(payload) : undefined,
-    })
-
-    if (!response.ok && response.status !== 204) {
-      throw new Error(`Spotify API error: ${response.status}`)
     }
 
     return NextResponse.json({ success: true })
@@ -93,30 +67,17 @@ export async function POST(request: Request) {
     const body = await request.json()
     const { action } = body
 
-    let endpoint = ""
-
     switch (action) {
       case "next":
-        endpoint = "https://api.spotify.com/v1/me/player/next"
+        await spotifyApi.skipToNext(session.accessToken)
         break
 
       case "previous":
-        endpoint = "https://api.spotify.com/v1/me/player/previous"
+        await spotifyApi.skipToPrevious(session.accessToken)
         break
 
       default:
         return NextResponse.json({ error: "Invalid action" }, { status: 400 })
-    }
-
-    const response = await fetch(endpoint, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${session.accessToken}`,
-      },
-    })
-
-    if (!response.ok && response.status !== 204) {
-      throw new Error(`Spotify API error: ${response.status}`)
     }
 
     return NextResponse.json({ success: true })

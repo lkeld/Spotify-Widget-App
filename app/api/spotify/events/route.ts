@@ -1,4 +1,5 @@
 import { getSession } from "@/lib/auth"
+import { spotifyApi, clearCache } from "@/lib/spotify-api"
 
 // This is a Server-Sent Events (SSE) implementation for real-time updates
 // This is more efficient than polling and works well with Next.js App Router
@@ -21,34 +22,20 @@ export async function GET(request: Request) {
       let lastTrackId: string | null = null;
       let lastPlayState: boolean = false;
       let lastProgress: number = 0;
-      let lastFetchTime: number = 0;
+      let lastQueueHash: string = "";
       
       // Function to fetch current playback
       const fetchPlayback = async () => {
         try {
-          // Avoid over-fetching - only fetch if at least 500ms have passed
-          const now = Date.now();
-          if (now - lastFetchTime < 500) return;
-          lastFetchTime = now;
+          // Use the cached/throttled API client
+          const data = await spotifyApi.getCurrentPlayback(session.accessToken) as any;
           
-          const response = await fetch("https://api.spotify.com/v1/me/player", {
-            headers: {
-              Authorization: `Bearer ${session.accessToken}`,
-            },
-          });
-          
-          if (response.status === 204) {
+          if (!data || !data.item) {
             // No active player
-            const data = { type: "playback", data: { is_playing: false } };
-            controller.enqueue(encoder.encode(`data: ${JSON.stringify(data)}\n\n`));
+            const noPlayerData = { type: "playback", data: { is_playing: false } };
+            controller.enqueue(encoder.encode(`data: ${JSON.stringify(noPlayerData)}\n\n`));
             return;
           }
-          
-          if (!response.ok) {
-            throw new Error(`Spotify API error: ${response.status}`);
-          }
-          
-          const data = await response.json();
           
           // Check if significant change has occurred
           const currentTrackId = data.item?.id || null;
@@ -70,23 +57,13 @@ export async function GET(request: Request) {
             lastPlayState = isPlaying;
             lastProgress = progress;
             
-            // If track changed, also fetch queue
+            // If track changed, also fetch queue - but don't refetch if we just did
             if (hasTrackChanged) {
-              try {
-                const queueResponse = await fetch("https://api.spotify.com/v1/me/player/queue", {
-                  headers: {
-                    Authorization: `Bearer ${session.accessToken}`,
-                  },
-                });
-                
-                if (queueResponse.ok) {
-                  const queueData = await queueResponse.json();
-                  controller.enqueue(
-                    encoder.encode(`data: ${JSON.stringify({ type: "queue", data: queueData })}\n\n`)
-                  );
-                }
-              } catch (error) {
-                console.error("Error fetching queue:", error);
+              fetchQueue();
+              
+              // Also clear any cached audio features for the new track
+              if (currentTrackId) {
+                clearCache(`audio-features-${currentTrackId}`);
               }
             }
           }
@@ -94,6 +71,29 @@ export async function GET(request: Request) {
           console.error("Error in SSE stream:", error);
           // Send ping to keep connection alive even on error
           controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: "ping" })}\n\n`));
+        }
+      };
+      
+      // Function to fetch queue (separated to avoid redundant fetches)
+      const fetchQueue = async () => {
+        try {
+          const queueData = await spotifyApi.getQueue(session.accessToken) as any;
+          
+          if (queueData) {
+            // Create a simple hash of the queue to detect changes
+            const queueHash = queueData.queue
+              ? queueData.queue.map((t: any) => t.id).join('|')
+              : '';
+              
+            if (queueHash !== lastQueueHash) {
+              controller.enqueue(
+                encoder.encode(`data: ${JSON.stringify({ type: "queue", data: queueData })}\n\n`)
+              );
+              lastQueueHash = queueHash;
+            }
+          }
+        } catch (error) {
+          console.error("Error fetching queue:", error);
         }
       };
       
@@ -107,9 +107,13 @@ export async function GET(request: Request) {
       // Then set up interval - fetch every 1 second while connection is open
       const interval = setInterval(fetchPlayback, 1000);
       
-      // Clean up interval when client disconnects
+      // Set up less frequent queue polling
+      const queueInterval = setInterval(fetchQueue, 3000);
+      
+      // Clean up intervals when client disconnects
       request.signal.addEventListener("abort", () => {
         clearInterval(interval);
+        clearInterval(queueInterval);
       });
     },
   });

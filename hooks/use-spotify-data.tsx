@@ -174,9 +174,13 @@ export function useSpotifyData() {
       const eventSource = new EventSource('/api/spotify/events')
       eventSourceRef.current = eventSource
       
+      let reconnectAttempts = 0;
+      let reconnectTimeout: NodeJS.Timeout | null = null;
+      
       eventSource.onopen = () => {
         console.log('SSE connected')
         setSseConnected(true)
+        reconnectAttempts = 0; // Reset attempts counter on successful connection
       }
       
       eventSource.onmessage = (event) => {
@@ -209,6 +213,8 @@ export function useSpotifyData() {
             setQueue(data.data.queue || [])
           } else if (data.type === 'connected') {
             console.log('SSE connected and ready for data')
+          } else if (data.type === 'ping') {
+            // Just a keepalive, no action needed
           }
         } catch (error) {
           console.error('Error parsing SSE message:', error)
@@ -219,11 +225,21 @@ export function useSpotifyData() {
         console.error('SSE error:', error)
         setSseConnected(false)
         
+        // Exponential backoff for reconnection attempts
+        const backoffTime = Math.min(1000 * Math.pow(2, reconnectAttempts), 30000);
+        reconnectAttempts++;
+        
+        // Clear any existing reconnect timeout
+        if (reconnectTimeout) {
+          clearTimeout(reconnectTimeout);
+        }
+        
         // Attempt to reconnect if the document is visible
         if (document.visibilityState === 'visible') {
-          setTimeout(() => {
+          console.log(`Attempting to reconnect in ${backoffTime}ms (attempt #${reconnectAttempts})`)
+          reconnectTimeout = setTimeout(() => {
             connectSSE()
-          }, 3000)
+          }, backoffTime)
         }
       }
     }
@@ -268,8 +284,19 @@ export function useSpotifyData() {
       // Fall back to regular polling if SSE not connected
       interval = setInterval(() => {
         if (document.visibilityState === 'visible') {
-          fetchCurrentPlayback()
-          fetchQueue()
+          // Only fetch data if the tab is visible
+          const now = Date.now();
+          
+          // Only fetch if we haven't updated recently (prevents duplicate requests)
+          if (now - lastUpdatedRef.current > UPDATE_THRESHOLD) {
+            fetchCurrentPlayback();
+            lastUpdatedRef.current = now;
+            
+            // Fetch queue less frequently to reduce API load
+            if (now % 3000 < 100) { // Approximately every 3 seconds
+              fetchQueue();
+            }
+          }
         }
       }, SHORT_POLL_INTERVAL)
     }
@@ -281,25 +308,52 @@ export function useSpotifyData() {
   
   // Poll for non-critical data less frequently
   useEffect(() => {
-    let interval: NodeJS.Timeout | undefined
+    // Initial data fetch staggered to prevent all requests at once
+    const initialFetches = () => {
+      setTimeout(() => fetchCurrentPlayback(), 0);
+      setTimeout(() => fetchDevices(), 300);
+      setTimeout(() => fetchTopTracks(), 600);
+      setTimeout(() => fetchRecentlyPlayed(), 900);
+      setTimeout(() => fetchQueue(), 1200);
+    };
     
-    interval = setInterval(() => {
+    // Run initial fetches
+    initialFetches();
+    
+    // Set up intervals for background updates of non-critical data
+    const deviceInterval = setInterval(() => {
       if (document.visibilityState === 'visible') {
-        fetchDevices()
-        fetchRecentlyPlayed()
-        fetchTopTracks()
+        fetchDevices();
       }
-    }, LONG_POLL_INTERVAL)
+    }, 30000); // 30 seconds
     
-    // Initial data fetch
-    fetchCurrentPlayback()
-    fetchDevices()
-    fetchTopTracks()
-    fetchRecentlyPlayed()
-    fetchQueue()
+    const recentlyPlayedInterval = setInterval(() => {
+      if (document.visibilityState === 'visible') {
+        fetchRecentlyPlayed();
+      }
+    }, 60000); // 1 minute
+    
+    const topTracksInterval = setInterval(() => {
+      if (document.visibilityState === 'visible') {
+        fetchTopTracks();
+      }
+    }, 300000); // 5 minutes
+    
+    // Refresh data when tab becomes visible again
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        fetchCurrentPlayback();
+        fetchQueue();
+      }
+    };
+    
+    document.addEventListener('visibilitychange', handleVisibilityChange);
     
     return () => {
-      if (interval) clearInterval(interval)
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      clearInterval(deviceInterval);
+      clearInterval(recentlyPlayedInterval);
+      clearInterval(topTracksInterval);
     }
   }, [fetchCurrentPlayback, fetchDevices, fetchTopTracks, fetchRecentlyPlayed, fetchQueue])
 

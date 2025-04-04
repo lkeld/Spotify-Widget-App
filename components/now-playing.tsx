@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react"
 import Image from "next/image"
-import { Heart, Repeat, Shuffle, SkipBack, Play, Pause, SkipForward } from "lucide-react"
+import { Heart, Repeat, Shuffle, SkipBack, Play, Pause, SkipForward, Repeat1, RotateCcw, Info } from "lucide-react"
 import { motion, AnimatePresence } from "framer-motion"
 import { getPaletteFromURL } from "@/lib/colors"
 
@@ -421,12 +421,15 @@ export function NowPlaying({
                 whileHover={{ scale: 1.05 }}
                 whileTap={{ scale: 0.9 }}
                 onClick={onReplayTrack}
-                className="rounded-full p-2 bg-white/10 backdrop-blur-sm md:hidden"
+                className="rounded-full p-2 bg-white/10 backdrop-blur-sm md:hidden relative group"
               >
-                <Repeat
+                <RotateCcw
                   className="h-4 w-4 text-white/90"
                   strokeWidth={2}
                 />
+                <span className="absolute -top-8 left-1/2 transform -translate-x-1/2 bg-black/80 text-white text-xs py-1 px-2 rounded opacity-0 group-hover:opacity-100 whitespace-nowrap transition-opacity">
+                  Restart track
+                </span>
               </motion.button>
             </div>
             
@@ -436,10 +439,16 @@ export function NowPlaying({
               <motion.button 
                 whileHover={{ scale: 1.1 }}
                 whileTap={{ scale: 0.9 }}
-                className={`text-white/60 hover:text-white transition-colors ${shuffleState ? 'text-white' : ''}`}
+                className={`text-white/60 hover:text-white transition-colors relative group ${shuffleState ? 'text-white' : ''}`}
                 onClick={onToggleShuffle}
               >
                 <Shuffle className="h-4 w-4" />
+                {shuffleState && (
+                  <span className="absolute -bottom-1 left-1/2 transform -translate-x-1/2 w-1 h-1 bg-white rounded-full" />
+                )}
+                <span className="absolute -top-8 left-1/2 transform -translate-x-1/2 bg-black/80 text-white text-xs py-1 px-2 rounded opacity-0 group-hover:opacity-100 whitespace-nowrap transition-opacity">
+                  {shuffleState ? 'Shuffle: On' : 'Shuffle: Off'}
+                </span>
               </motion.button>
               
               {/* Previous button */}
@@ -482,25 +491,39 @@ export function NowPlaying({
               <motion.button 
                 whileHover={{ scale: 1.1 }}
                 whileTap={{ scale: 0.9 }}
-                className={`text-white/60 hover:text-white transition-colors ${repeatState !== 'off' ? 'text-white' : ''}`}
+                className={`text-white/60 hover:text-white transition-colors relative group ${repeatState !== 'off' ? 'text-white' : ''}`}
                 onClick={onToggleRepeat}
               >
-                <Repeat className="h-4 w-4" />
+                {repeatState === 'track' ? (
+                  <Repeat1 className="h-4 w-4" />
+                ) : (
+                  <Repeat className="h-4 w-4" />
+                )}
+                {repeatState !== 'off' && (
+                  <span className="absolute -bottom-1 left-1/2 transform -translate-x-1/2 w-1 h-1 bg-white rounded-full" />
+                )}
+                <span className="absolute -top-8 left-1/2 transform -translate-x-1/2 bg-black/80 text-white text-xs py-1 px-2 rounded opacity-0 group-hover:opacity-100 whitespace-nowrap transition-opacity">
+                  {repeatState === 'off' ? 'Repeat: Off' : repeatState === 'context' ? 'Repeat: All' : 'Repeat: One'}
+                </span>
               </motion.button>
             </div>
             
             {/* Reply button moved here and next track info */}
             <div className="flex items-center order-3">
+              {/* Updated restart button instance (desktop view) */}
               <motion.button 
                 whileHover={{ scale: 1.05 }}
                 whileTap={{ scale: 0.9 }}
                 onClick={onReplayTrack}
-                className="rounded-full p-2 bg-white/10 backdrop-blur-sm mr-2 hidden md:flex"
+                className="rounded-full p-2 bg-white/10 backdrop-blur-sm mr-2 hidden md:flex relative group"
               >
-                <Repeat
+                <RotateCcw
                   className="h-4 w-4 text-white/90"
                   strokeWidth={2}
                 />
+                <span className="absolute -top-8 left-1/2 transform -translate-x-1/2 bg-black/80 text-white text-xs py-1 px-2 rounded opacity-0 group-hover:opacity-100 whitespace-nowrap transition-opacity">
+                  Restart track
+                </span>
               </motion.button>
               
               {nextTrack && (

@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server"
 import { getSession } from "@/lib/auth"
+import { spotifyApi } from "@/lib/spotify-api"
 
 export async function GET() {
   try {
@@ -9,23 +10,7 @@ export async function GET() {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
     }
     
-    // Add timestamp to ensure we don't get cached responses
-    const timestamp = Date.now()
-    const response = await fetch(`https://api.spotify.com/v1/me/player/queue?timestamp=${timestamp}`, {
-      headers: {
-        Authorization: `Bearer ${session.accessToken}`,
-        "Cache-Control": "no-cache"
-      },
-    })
-    
-    if (!response.ok) {
-      return NextResponse.json(
-        { error: `Spotify API error: ${response.statusText}` },
-        { status: response.status }
-      )
-    }
-    
-    const data = await response.json()
+    const data = await spotifyApi.getQueue(session.accessToken)
     return NextResponse.json(data)
   } catch (error) {
     console.error("Error fetching queue:", error)

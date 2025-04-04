@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server"
 import { getSession } from "@/lib/auth"
+import { spotifyApi } from "@/lib/spotify-api"
 
 export async function GET() {
   const session = await getSession()
@@ -9,17 +10,7 @@ export async function GET() {
   }
 
   try {
-    const response = await fetch("https://api.spotify.com/v1/me/top/tracks?limit=10&time_range=short_term", {
-      headers: {
-        Authorization: `Bearer ${session.accessToken}`,
-      },
-    })
-
-    if (!response.ok) {
-      throw new Error(`Spotify API error: ${response.status}`)
-    }
-
-    const data = await response.json()
+    const data = await spotifyApi.getTopTracks(session.accessToken, 10, "short_term")
     return NextResponse.json(data)
   } catch (error) {
     console.error("Error fetching top tracks:", error)
