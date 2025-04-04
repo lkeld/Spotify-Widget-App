@@ -14,6 +14,15 @@ const nextConfig = {
     parallelServerBuildTraces: true,
     parallelServerCompiles: true,
   },
+  webpack: (config, { dev }) => {
+    if (dev) {
+      config.watchOptions = {
+        ...config.watchOptions,
+        poll: false,
+      };
+    }
+    return config;
+  },
 }
 
 export default nextConfig
