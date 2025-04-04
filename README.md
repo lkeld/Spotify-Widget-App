@@ -21,7 +21,7 @@
 - **Session Management**: Secure authentication with Spotify's OAuth flow
 
 <div align="center">
-  <img src="https://i.imgur.com/xMrmGQB.png" alt="Dashboard Preview" width="80%" />
+  <img src="https://i.imgur.com/DhUPT8y.png" alt="Dashboard Preview" width="80%" />
 </div>
 
 ## 🚀 Quick Start
@@ -179,5 +179,5 @@ This project is licensed under the MIT License - see the LICENSE file for detail
 ---
 
 <div align="center">
-  Made with ❤️ by Luke
+  Made with ❤️ by your name
 </div> 

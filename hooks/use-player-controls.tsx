@@ -32,7 +32,7 @@ export function usePlayerControls() {
     }
   }, [])
 
-  // Helper to manage API request state
+  // Helper to manage API request state - improved for better responsiveness
   const performAction = useCallback(async (
     actionName: string, 
     apiCall: () => Promise<Response>,
@@ -43,6 +43,13 @@ export function usePlayerControls() {
     setActionError(null)
     
     try {
+      // First callback to update UI immediately
+      if (onSuccess) {
+        // Call the success handler immediately for a more responsive feel
+        // This provides an "optimistic update" before waiting for the API
+        setTimeout(onSuccess, 0)
+      }
+      
       const response = await apiCall()
       
       if (!response.ok) {
@@ -56,7 +63,10 @@ export function usePlayerControls() {
         localStorage.setItem('spotify_repeat_state', repeatState)
       }
       
-      if (onSuccess) onSuccess()
+      // Second callback after the response to ensure data is fresh
+      if (onSuccess) {
+        setTimeout(onSuccess, 100) // Slight delay to ensure Spotify state has updated
+      }
     } catch (error) {
       console.error(`Error with ${actionName}:`, error)
       setActionError(actionName)

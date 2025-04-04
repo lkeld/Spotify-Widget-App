@@ -120,11 +120,14 @@ export function Dashboard() {
     router.push("/")
   }
 
-  // Refresh data every 5 seconds
+  // Refresh data more frequently
   useEffect(() => {
+    // Shorter interval for more responsive updates (5 seconds -> 1 second)
     const interval = setInterval(() => {
-      refreshData()
-    }, 5000)
+      if (document.visibilityState === 'visible') {
+        refreshData()
+      }
+    }, 1000)
 
     return () => clearInterval(interval)
   }, [refreshData])
