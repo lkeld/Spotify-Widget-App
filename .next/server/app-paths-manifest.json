@@ -1,0 +1,19 @@
+{
+  "/api/auth/token/route": "app/api/auth/token/route.js",
+  "/api/auth/logout/route": "app/api/auth/logout/route.js",
+  "/_not-found/page": "app/_not-found/page.js",
+  "/api/auth/login/route": "app/api/auth/login/route.js",
+  "/api/auth/callback/route": "app/api/auth/callback/route.js",
+  "/api/spotify/devices/route": "app/api/spotify/devices/route.js",
+  "/api/spotify/current-playback/route": "app/api/spotify/current-playback/route.js",
+  "/api/spotify/queue/route": "app/api/spotify/queue/route.js",
+  "/api/spotify/top-tracks/route": "app/api/spotify/top-tracks/route.js",
+  "/api/spotify/recently-played/route": "app/api/spotify/recently-played/route.js",
+  "/api/spotify/audio-features/route": "app/api/spotify/audio-features/route.js",
+  "/api/spotify/events/route": "app/api/spotify/events/route.js",
+  "/api/spotify/player/route": "app/api/spotify/player/route.js",
+  "/api/spotify/ws/route": "app/api/spotify/ws/route.js",
+  "/dashboard/page": "app/dashboard/page.js",
+  "/callback/page": "app/callback/page.js",
+  "/page": "app/page.js"
+}
