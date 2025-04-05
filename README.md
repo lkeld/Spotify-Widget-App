@@ -1,4 +1,5 @@
 # Spotify Dashboard 🎵
+#
 
 <div align="center">
   <img src="./public/spotify-logo.svg" alt="Spotify Dashboard Logo" width="120" />
