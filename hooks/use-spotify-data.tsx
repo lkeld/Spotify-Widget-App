@@ -1,6 +1,7 @@
 "use client"
 
 import { useState, useEffect, useCallback, useRef } from "react"
+import { useSpotifySocket } from "@/lib/spotify-socket"
 
 // Define proper types for Spotify objects
 interface SpotifyTrack {
@@ -56,17 +57,15 @@ export function useSpotifyData() {
   const [shuffleState, setShuffleState] = useState(false)
   const [repeatState, setRepeatState] = useState("off")
   const [queue, setQueue] = useState<SpotifyTrack[]>([])
-  const [sseConnected, setSseConnected] = useState(false)
-  const eventSourceRef = useRef<EventSource | null>(null)
+  const [wsConnected, setWsConnected] = useState(false)
   const lastUpdatedRef = useRef<number>(0)
   
-  // Shorter polling interval (milliseconds) as fallback when SSE isn't working
-  const SHORT_POLL_INTERVAL = 1000
-  // Longer polling interval for non-critical data
-  const LONG_POLL_INTERVAL = 30000
-  // Threshold to prevent overfetching (milliseconds)
-  const UPDATE_THRESHOLD = 500
+  // Get the WebSocket connection
+  const { socketState, subscribe } = useSpotifySocket()
 
+  // Data fetch intervals (milliseconds) - now longer because we use WebSocket for real-time data
+  const UPDATE_THRESHOLD = 1000 // Increased to reduce API load
+  
   const fetchCurrentPlayback = useCallback(async () => {
     // Skip if we've fetched very recently to prevent overfetching
     const now = Date.now()
@@ -162,126 +161,70 @@ export function useSpotifyData() {
     }
   }, [])
 
-  // Set up Server-Sent Events connection for real-time updates
-  useEffect(() => {
-    const connectSSE = () => {
-      // Close previous connection if exists
-      if (eventSourceRef.current) {
-        eventSourceRef.current.close()
-      }
-      
-      // Create Server-Sent Events connection
-      const eventSource = new EventSource('/api/spotify/events')
-      eventSourceRef.current = eventSource
-      
-      let reconnectAttempts = 0;
-      let reconnectTimeout: NodeJS.Timeout | null = null;
-      
-      eventSource.onopen = () => {
-        console.log('SSE connected')
-        setSseConnected(true)
-        reconnectAttempts = 0; // Reset attempts counter on successful connection
-      }
-      
-      eventSource.onmessage = (event) => {
-        try {
-          const data = JSON.parse(event.data)
-          
-          // Handle different types of updates
-          if (data.type === 'playback') {
-            if (data.data.item) {
-              setCurrentTrack(data.data.item)
-              setIsPlaying(data.data.is_playing)
-              setProgress(data.data.progress_ms)
-              setDuration(data.data.item.duration_ms)
-              setShuffleState(data.data.shuffle_state)
-              setRepeatState(data.data.repeat_state)
-              
-              if (data.data.device) {
-                setCurrentDevice(data.data.device)
-              }
-              
-              // Update last updated timestamp
-              lastUpdatedRef.current = Date.now()
-              
-              // Fetch audio features if we have a current track
-              if (data.data.item?.id) {
-                fetchAudioFeatures(data.data.item.id)
-              }
-            }
-          } else if (data.type === 'queue') {
-            setQueue(data.data.queue || [])
-          } else if (data.type === 'connected') {
-            console.log('SSE connected and ready for data')
-          } else if (data.type === 'ping') {
-            // Just a keepalive, no action needed
-          }
-        } catch (error) {
-          console.error('Error parsing SSE message:', error)
-        }
-      }
-      
-      eventSource.onerror = (error) => {
-        console.error('SSE error:', error)
-        setSseConnected(false)
-        
-        // Exponential backoff for reconnection attempts
-        const backoffTime = Math.min(1000 * Math.pow(2, reconnectAttempts), 30000);
-        reconnectAttempts++;
-        
-        // Clear any existing reconnect timeout
-        if (reconnectTimeout) {
-          clearTimeout(reconnectTimeout);
-        }
-        
-        // Attempt to reconnect if the document is visible
-        if (document.visibilityState === 'visible') {
-          console.log(`Attempting to reconnect in ${backoffTime}ms (attempt #${reconnectAttempts})`)
-          reconnectTimeout = setTimeout(() => {
-            connectSSE()
-          }, backoffTime)
-        }
-      }
-    }
-    
-    // Initially connect SSE
-    connectSSE()
-    
-    // Reconnect when tab becomes visible again
-    const handleVisibilityChange = () => {
-      if (document.visibilityState === 'visible' && (!eventSourceRef.current || eventSourceRef.current.readyState === EventSource.CLOSED)) {
-        connectSSE()
-      }
-    }
-    
-    document.addEventListener('visibilitychange', handleVisibilityChange)
-    
-    // Cleanup function
-    return () => {
-      document.removeEventListener('visibilitychange', handleVisibilityChange)
-      if (eventSourceRef.current) {
-        eventSourceRef.current.close()
-      }
-    }
-  }, [fetchAudioFeatures])
-
   const refreshData = useCallback(() => {
     // Immediate fetch for fastest refresh when user performs an action
     fetchCurrentPlayback()
     fetchQueue()
-    
-    // Short delay and re-fetch queue to ensure latest data after player actions
-    setTimeout(() => {
-      fetchQueue()
-    }, 100) // Reduced from 300ms to 100ms for faster updates
   }, [fetchCurrentPlayback, fetchQueue])
 
-  // Poll for playback updates if SSE is not connected
+  // Connect to WebSocket and handle real-time updates
   useEffect(() => {
-    let interval: NodeJS.Timeout | undefined
+    // Update websocket connection status
+    setWsConnected(socketState === 'connected')
     
-    if (!sseConnected) {
-      // Fall back to regular polling if SSE not connected
+    // If connected, set up message handlers
+    if (socketState === 'connected') {
+      console.log('Setting up WebSocket message handlers')
+      
+      // Handle playback updates
+      const unsubPlayback = subscribe('playback', (data: any) => {
+        if (data.item) {
+          setCurrentTrack(data.item)
+          setIsPlaying(data.is_playing)
+          setProgress(data.progress_ms)
+          setDuration(data.item.duration_ms)
+          setShuffleState(data.shuffle_state)
+          setRepeatState(data.repeat_state)
+          
+          if (data.device) {
+            setCurrentDevice(data.device)
+          }
+          
+          // Update last updated timestamp
+          lastUpdatedRef.current = Date.now()
+          
+          // Fetch audio features if we have a current track
+          if (data.item?.id) {
+            fetchAudioFeatures(data.item.id)
+          }
+        }
+      });
+      
+      // Handle queue updates
+      const unsubQueue = subscribe('queue', (data: any) => {
+        setQueue(data.queue || [])
+      });
+      
+      // Handle device updates
+      const unsubDevices = subscribe('devices', (data: any) => {
+        setDevices(data.devices || [])
+      });
+      
+      // Clean up subscriptions
+      return () => {
+        unsubPlayback();
+        unsubQueue();
+        unsubDevices();
+      };
+    }
+  }, [socketState, subscribe, fetchAudioFeatures]);
+  
+  // Poll as fallback if WebSocket is not connected
+  useEffect(() => {
+    let interval: ReturnType<typeof setInterval> | undefined
+    
+    if (!wsConnected) {
+      // Fall back to regular polling if WebSocket not connected
       interval = setInterval(() => {
         if (document.visibilityState === 'visible') {
           // Only fetch data if the tab is visible
@@ -290,31 +233,30 @@ export function useSpotifyData() {
           // Only fetch if we haven't updated recently (prevents duplicate requests)
           if (now - lastUpdatedRef.current > UPDATE_THRESHOLD) {
             fetchCurrentPlayback();
-            lastUpdatedRef.current = now;
             
             // Fetch queue less frequently to reduce API load
-            if (now % 3000 < 100) { // Approximately every 3 seconds
+            if (now % 15000 < 100) { // Approximately every 15 seconds
               fetchQueue();
             }
           }
         }
-      }, SHORT_POLL_INTERVAL)
+      }, 5000) // Reduced polling frequency to 5 seconds
     }
     
     return () => {
       if (interval) clearInterval(interval)
     }
-  }, [fetchCurrentPlayback, fetchQueue, sseConnected])
+  }, [fetchCurrentPlayback, fetchQueue, wsConnected])
   
-  // Poll for non-critical data less frequently
+  // Initial data fetch and periodic updates for non-critical data
   useEffect(() => {
     // Initial data fetch staggered to prevent all requests at once
     const initialFetches = () => {
       setTimeout(() => fetchCurrentPlayback(), 0);
-      setTimeout(() => fetchDevices(), 300);
-      setTimeout(() => fetchTopTracks(), 600);
-      setTimeout(() => fetchRecentlyPlayed(), 900);
-      setTimeout(() => fetchQueue(), 1200);
+      setTimeout(() => fetchDevices(), 500);
+      setTimeout(() => fetchTopTracks(), 1000);
+      setTimeout(() => fetchRecentlyPlayed(), 1500);
+      setTimeout(() => fetchQueue(), 2000);
     };
     
     // Run initial fetches
@@ -325,19 +267,19 @@ export function useSpotifyData() {
       if (document.visibilityState === 'visible') {
         fetchDevices();
       }
-    }, 30000); // 30 seconds
+    }, 60000); // 1 minute (increased from 30s)
     
     const recentlyPlayedInterval = setInterval(() => {
       if (document.visibilityState === 'visible') {
         fetchRecentlyPlayed();
       }
-    }, 60000); // 1 minute
+    }, 180000); // 3 minutes (increased from 1m)
     
     const topTracksInterval = setInterval(() => {
       if (document.visibilityState === 'visible') {
         fetchTopTracks();
       }
-    }, 300000); // 5 minutes
+    }, 600000); // 10 minutes (increased from 5m)
     
     // Refresh data when tab becomes visible again
     const handleVisibilityChange = () => {
@@ -359,11 +301,11 @@ export function useSpotifyData() {
 
   // Update progress in real-time when playing
   useEffect(() => {
-    let interval: NodeJS.Timeout | undefined
+    let interval: ReturnType<typeof setInterval> | undefined
 
     if (isPlaying) {
       interval = setInterval(() => {
-        setProgress((prev) => {
+        setProgress((prev: number) => {
           if (prev >= duration) {
             clearInterval(interval)
             return 0
@@ -373,7 +315,9 @@ export function useSpotifyData() {
       }, 50) // Changed from 1000ms to 50ms for more granular updates
     }
 
-    return () => clearInterval(interval)
+    return () => {
+      if (interval) clearInterval(interval)
+    }
   }, [isPlaying, duration])
 
   return {
@@ -391,7 +335,7 @@ export function useSpotifyData() {
     repeatState,
     queue,
     refreshData,
-    sseConnected,
+    wsConnected
   }
 }
 

@@ -106,6 +106,48 @@ Full control over your Spotify playback right from the dashboard:
 - Change repeat mode
 - Access to your Spotify devices
 
+## Optimized Real-time Updates
+
+This application has been optimized to minimize API requests to Spotify while maintaining real-time updates. It uses a WebSocket server for efficient data streaming instead of polling the API multiple times.
+
+### Running the WebSocket Server
+
+The WebSocket server needs to be running alongside the Next.js application. You can run it in one of two ways:
+
+1. **Development mode (all-in-one):**
+   ```bash
+   npm run dev:all
+   ```
+   This runs both the Next.js dev server and WebSocket server concurrently.
+
+2. **Separately:**
+   ```bash
+   # Terminal 1: Run the Next.js app
+   npm run dev
+   
+   # Terminal 2: Run the WebSocket server
+   npm run websocket
+   ```
+
+### Configuration
+
+The WebSocket server configuration is stored in the `.env.local` file:
+
+```
+NEXT_PUBLIC_WEBSOCKET_URL=ws://localhost:3001
+WS_SERVER_PORT=3001
+```
+
+For production, you should update these to use secure WebSocket connections (wss://).
+
+### Benefits
+
+- **Reduced API calls:** The WebSocket server batches and deduplicates Spotify API requests
+- **Real-time updates:** Data is pushed to the client as soon as it changes
+- **Better performance:** Less network traffic and CPU usage
+- **More responsive UI:** Updates come through immediately without polling delays
+- **Fallback mechanism:** If WebSocket fails, the app falls back to polling (less frequently)
+
 ## 🧰 Tech Stack
 
 - **Framework**: [Next.js 15](https://nextjs.org/)

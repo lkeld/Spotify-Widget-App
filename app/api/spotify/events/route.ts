@@ -1,8 +1,8 @@
 import { getSession } from "@/lib/auth"
 import { spotifyApi, clearCache } from "@/lib/spotify-api"
 
-// This is a Server-Sent Events (SSE) implementation for real-time updates
-// This is more efficient than polling and works well with Next.js App Router
+// This Server-Sent Events (SSE) implementation serves as a fallback
+// for browsers that don't support WebSockets or when the WebSocket server is down
 export async function GET(request: Request) {
   const session = await getSession();
   
@@ -44,7 +44,7 @@ export async function GET(request: Request) {
           
           const hasTrackChanged = currentTrackId !== lastTrackId;
           const hasPlayStateChanged = isPlaying !== lastPlayState;
-          const hasProgressJumped = Math.abs(progress - lastProgress) > 2000;
+          const hasProgressJumped = Math.abs(progress - lastProgress) > 3000; // Increased threshold
           
           if (hasTrackChanged || hasPlayStateChanged || hasProgressJumped) {
             // Send playback update
@@ -104,11 +104,11 @@ export async function GET(request: Request) {
       // Fetch immediately on connection
       fetchPlayback();
       
-      // Then set up interval - fetch every 1 second while connection is open
-      const interval = setInterval(fetchPlayback, 1000);
+      // Then set up interval - fetch less frequently (3 seconds) since this is a fallback
+      const interval = setInterval(fetchPlayback, 3000);
       
-      // Set up less frequent queue polling
-      const queueInterval = setInterval(fetchQueue, 3000);
+      // Set up less frequent queue polling (10 seconds)
+      const queueInterval = setInterval(fetchQueue, 10000);
       
       // Clean up intervals when client disconnects
       request.signal.addEventListener("abort", () => {

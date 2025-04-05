@@ -1,9 +1,10 @@
 import { logDebug, logError } from "./debug";
+import { useRef } from "react";
 
 // Cache configuration
 const CACHE_TTL = {
-  CURRENT_PLAYBACK: 1000, // 1 second
-  QUEUE: 2000, // 2 seconds
+  CURRENT_PLAYBACK: 2000, // 2 seconds (increased to reduce API load)
+  QUEUE: 3000, // 3 seconds (increased to reduce API load)
   DEVICES: 30000, // 30 seconds
   TOP_TRACKS: 3600000, // 1 hour
   RECENTLY_PLAYED: 60000, // 1 minute
@@ -28,6 +29,16 @@ const lastRequestTime: Record<string, number> = {};
 
 // Pending requests for deduplication
 const pendingRequests: Record<string, Promise<any>> = {};
+
+// Socket state for managing WebSocket communication
+export type SocketState = 'connecting' | 'connected' | 'disconnected' | 'error';
+
+// Socket message types
+export interface SpotifySocketMessage {
+  type: 'playback' | 'queue' | 'devices' | 'ping' | 'error' | 'auth_success';
+  data?: any;
+  timestamp?: number;
+}
 
 /**
  * Make a throttled API request with caching
@@ -363,4 +374,14 @@ export const spotifyApi = {
       3600000 // 1 hour cache
     );
   },
-}; 
+};
+
+// Create a message handler store
+const messageHandlersRef = useRef<Record<string, Set<(data: any) => void>>>({
+  playback: new Set(),
+  queue: new Set(),
+  devices: new Set(),
+  ping: new Set(),
+  error: new Set(),
+  auth_success: new Set(),
+}); 
