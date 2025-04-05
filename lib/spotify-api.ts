@@ -240,9 +240,9 @@ export const spotifyApi = {
   
   // Player controls
   togglePlayback: async (accessToken: string, play?: boolean) => {
-    const endpoint = play === undefined 
+    const endpoint = play !== undefined 
       ? `https://api.spotify.com/v1/me/player/${play ? 'play' : 'pause'}` 
-      : 'https://api.spotify.com/v1/me/player/play';
+      : 'https://api.spotify.com/v1/me/player/pause';
     
     return makeRequest(
       endpoint,
