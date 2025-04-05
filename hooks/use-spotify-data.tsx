@@ -90,9 +90,6 @@ export function useSpotifyData() {
         if (data.device) {
           setCurrentDevice(data.device)
         }
-
-        // Fetch audio features for current track
-        fetchAudioFeatures(data.item.id)
       }
     } catch (error) {
       console.error("Error fetching current playback:", error)
@@ -148,24 +145,37 @@ export function useSpotifyData() {
   }, [])
 
   const fetchAudioFeatures = useCallback(async (trackId: string) => {
+    // Audio features API is deprecated, so let's provide fallback data directly
+    // without making API requests
     if (!trackId) return
-
-    try {
-      const response = await fetch(`/api/spotify/audio-features?id=${trackId}`)
-      if (!response.ok) return
-
-      const data = await response.json()
-      setAudioFeatures(data)
-    } catch (error) {
-      console.error("Error fetching audio features:", error)
-    }
+    
+    setAudioFeatures({
+      message: "Audio features unavailable",
+      danceability: 0,
+      energy: 0,
+      key: 0,
+      loudness: 0,
+      mode: 0,
+      speechiness: 0,
+      acousticness: 0,
+      instrumentalness: 0,
+      liveness: 0,
+      valence: 0,
+      tempo: 0,
+      id: trackId,
+      duration_ms: 0,
+      time_signature: 4
+    })
   }, [])
 
   const refreshData = useCallback(() => {
     // Immediate fetch for fastest refresh when user performs an action
     fetchCurrentPlayback()
-    fetchQueue()
-  }, [fetchCurrentPlayback, fetchQueue])
+    // Only fetch queue if WebSocket is not connected
+    if (!wsConnected) {
+      fetchQueue()
+    }
+  }, [fetchCurrentPlayback, fetchQueue, wsConnected])
 
   // Connect to WebSocket and handle real-time updates
   useEffect(() => {
@@ -193,7 +203,7 @@ export function useSpotifyData() {
           // Update last updated timestamp
           lastUpdatedRef.current = Date.now()
           
-          // Fetch audio features if we have a current track
+          // Use the local fallback instead of API call
           if (data.item?.id) {
             fetchAudioFeatures(data.item.id)
           }
@@ -235,12 +245,12 @@ export function useSpotifyData() {
             fetchCurrentPlayback();
             
             // Fetch queue less frequently to reduce API load
-            if (now % 15000 < 100) { // Approximately every 15 seconds
+            if (now % 30000 < 100) { // Approximately every 30 seconds (increased from 15s)
               fetchQueue();
             }
           }
         }
-      }, 5000) // Reduced polling frequency to 5 seconds
+      }, 10000) // Reduced polling frequency to 10 seconds (increased from 5s)
     }
     
     return () => {
@@ -256,7 +266,10 @@ export function useSpotifyData() {
       setTimeout(() => fetchDevices(), 500);
       setTimeout(() => fetchTopTracks(), 1000);
       setTimeout(() => fetchRecentlyPlayed(), 1500);
-      setTimeout(() => fetchQueue(), 2000);
+      // Only fetch queue if WebSocket is not connected
+      if (!wsConnected) {
+        setTimeout(() => fetchQueue(), 2000);
+      }
     };
     
     // Run initial fetches
@@ -285,7 +298,10 @@ export function useSpotifyData() {
     const handleVisibilityChange = () => {
       if (document.visibilityState === 'visible') {
         fetchCurrentPlayback();
-        fetchQueue();
+        // Only fetch queue if WebSocket is not connected
+        if (!wsConnected) {
+          fetchQueue();
+        }
       }
     };
     
@@ -297,7 +313,7 @@ export function useSpotifyData() {
       clearInterval(recentlyPlayedInterval);
       clearInterval(topTracksInterval);
     }
-  }, [fetchCurrentPlayback, fetchDevices, fetchTopTracks, fetchRecentlyPlayed, fetchQueue])
+  }, [fetchCurrentPlayback, fetchDevices, fetchTopTracks, fetchRecentlyPlayed, fetchQueue, wsConnected])
 
   // Update progress in real-time when playing
   useEffect(() => {

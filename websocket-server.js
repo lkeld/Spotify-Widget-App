@@ -82,6 +82,8 @@ wss.on('connection', (ws, req) => {
   let playbackInterval = null;
   let queueInterval = null;
   let devicesInterval = null;
+  let lastPingPongTime = Date.now();
+  let isAlive = true;
   
   // Store client in map
   clients.set(clientId, {
@@ -89,7 +91,8 @@ wss.on('connection', (ws, req) => {
     accessToken,
     lastPlaybackId: null,
     lastQueueHash: null,
-    lastPlayState: null
+    lastPlayState: null,
+    lastActivity: Date.now()
   });
   
   // Send initial connection message
@@ -98,8 +101,24 @@ wss.on('connection', (ws, req) => {
     timestamp: Date.now()
   }));
   
-  // Setup heartbeat to keep connection alive
+  // Setup heartbeat to keep connection alive and detect stale connections
   heartbeatInterval = setInterval(() => {
+    if (!isAlive) {
+      console.log(`Client ${clientId} heartbeat timeout, terminating connection`);
+      terminateConnection();
+      return;
+    }
+    
+    // Check if connection is alive
+    if (Date.now() - lastPingPongTime > 60000) { // 60 seconds without ping response
+      console.log(`Client ${clientId} connection appears stale, terminating connection`);
+      terminateConnection();
+      return;
+    }
+    
+    isAlive = false;
+    
+    // Send ping to client
     if (ws.readyState === WebSocket.OPEN) {
       ws.send(JSON.stringify({
         type: 'ping',
@@ -108,10 +127,45 @@ wss.on('connection', (ws, req) => {
     }
   }, 30000); // 30 second ping
   
+  // Process client ping message
+  const processPing = () => {
+    isAlive = true;
+    lastPingPongTime = Date.now();
+    clients.get(clientId).lastActivity = Date.now();
+  };
+  
+  // Function to terminate connection and clean up
+  const terminateConnection = () => {
+    // Clean up intervals
+    if (heartbeatInterval) clearInterval(heartbeatInterval);
+    if (playbackInterval) clearInterval(playbackInterval);
+    if (queueInterval) clearInterval(queueInterval);
+    if (devicesInterval) clearInterval(devicesInterval);
+    
+    // Remove client from map
+    clients.delete(clientId);
+    
+    // Terminate WebSocket connection
+    try {
+      ws.terminate();
+    } catch (err) {
+      console.error('Error terminating WebSocket connection:', err);
+    }
+  };
+  
   // Handle authentication message
   ws.on('message', async (message) => {
     try {
       const data = JSON.parse(message.toString());
+      
+      // Update last activity time
+      clients.get(clientId).lastActivity = Date.now();
+      
+      // Process ping message from client
+      if (data.type === 'ping') {
+        processPing();
+        return;
+      }
       
       if (data.type === 'auth') {
         // Store the token and start data fetching
@@ -160,6 +214,12 @@ wss.on('connection', (ws, req) => {
     
     // Remove client from map
     clients.delete(clientId);
+  });
+  
+  // Handle WebSocket error
+  ws.on('error', (error) => {
+    console.error(`WebSocket error for client ${clientId}:`, error);
+    terminateConnection();
   });
 });
 

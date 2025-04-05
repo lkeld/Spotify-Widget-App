@@ -16,6 +16,8 @@ export function useSpotifySocket() {
   const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const reconnectAttemptsRef = useRef(0);
   const accessTokenRef = useRef<string | null>(null);
+  const pingIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const lastPingRef = useRef<number>(Date.now());
   
   // Create a message handler store
   const messageHandlersRef = useRef<Record<string, Set<(data: any) => void>>>({
@@ -59,6 +61,33 @@ export function useSpotifySocket() {
     return true;
   }, []);
   
+  // Send a ping to keep the connection alive
+  const sendPing = useCallback(() => {
+    if (socketRef.current && socketRef.current.readyState === WebSocket.OPEN) {
+      socketRef.current.send(JSON.stringify({ type: 'ping' }));
+      lastPingRef.current = Date.now();
+    }
+  }, []);
+  
+  // Check connection health and reconnect if needed
+  const checkConnection = useCallback(() => {
+    // If socket exists but it's been more than 45 seconds since last ping response
+    const now = Date.now();
+    const pingTimeout = 45000; // 45 seconds
+    
+    if (socketRef.current && 
+        socketState === 'connected' && 
+        now - lastPingRef.current > pingTimeout) {
+      console.log('WebSocket connection appears stale, reconnecting...');
+      
+      // Force close and reconnect
+      socketRef.current.close();
+      socketRef.current = null;
+      setSocketState('disconnected');
+      connect();
+    }
+  }, [socketState]);
+  
   // Connect to WebSocket
   const connect = useCallback(() => {
     // Don't try to reconnect if we're already connected
@@ -75,6 +104,7 @@ export function useSpotifySocket() {
         console.log('WebSocket connected');
         setSocketState('connected');
         reconnectAttemptsRef.current = 0;
+        lastPingRef.current = Date.now();
         
         // Authenticate immediately after connection
         authenticate().catch(err => {
@@ -91,6 +121,11 @@ export function useSpotifySocket() {
           }
           
           setLastMessage(message);
+          
+          // Update last ping time when we receive a ping response
+          if (message.type === 'ping') {
+            lastPingRef.current = Date.now();
+          }
           
           // Handle auth success message
           if (message.type === 'auth_success') {
@@ -124,7 +159,7 @@ export function useSpotifySocket() {
       setSocketState('error');
       scheduleReconnect();
     }
-  }, [authenticate]);
+  }, [authenticate, checkConnection]);
   
   // Disconnect from WebSocket
   const disconnect = useCallback(() => {
@@ -148,18 +183,13 @@ export function useSpotifySocket() {
     }
     
     // Exponential backoff with a maximum of 30 seconds
-    const backoffTime = Math.min(1000 * Math.pow(2, reconnectAttemptsRef.current), 30000);
+    const backoffTime = Math.min(1000 * Math.pow(1.5, reconnectAttemptsRef.current), 30000);
     reconnectAttemptsRef.current++;
     
     console.log(`Scheduling WebSocket reconnection in ${backoffTime}ms`);
     reconnectTimeoutRef.current = setTimeout(() => {
-      // Only reconnect if document is visible
-      if (typeof document !== 'undefined' && document.visibilityState === 'visible') {
-        connect();
-      } else {
-        // If document is not visible, wait until it becomes visible
-        reconnectTimeoutRef.current = null;
-      }
+      // Always try to reconnect regardless of document visibility
+      connect();
     }, backoffTime);
   }, [connect]);
   
@@ -182,35 +212,60 @@ export function useSpotifySocket() {
     };
   }, []);
   
-  // Connect and disconnect based on document visibility
+  // Connect and handle reconnection
   useEffect(() => {
-    const handleVisibilityChange = () => {
-      if (typeof document !== 'undefined') {
-        if (document.visibilityState === 'visible') {
-          connect();
-        } else {
-          // Optional: You could disconnect when the page is hidden to save resources
-          // disconnect();
-        }
+    // Setup ping interval to keep connection alive
+    pingIntervalRef.current = setInterval(() => {
+      sendPing();
+      checkConnection();
+    }, 30000); // Send ping every 30 seconds
+
+    // Setup network status event listener
+    const handleOnline = () => {
+      console.log('Network is back online, reconnecting WebSocket');
+      // Only reconnect if we're not already connected
+      if (socketState !== 'connected' && socketState !== 'connecting') {
+        connect();
       }
     };
     
     // Initial connection
     connect();
     
-    // Add visibility change listener
-    if (typeof document !== 'undefined') {
-      document.addEventListener('visibilitychange', handleVisibilityChange);
+    // Add network and visibility event listeners
+    if (typeof window !== 'undefined') {
+      window.addEventListener('online', handleOnline);
+      window.addEventListener('focus', () => {
+        // When tab becomes active, check connection and reconnect if needed
+        checkConnection();
+      });
+      
+      // Add visibility change listener for reconnection
+      document.addEventListener('visibilitychange', () => {
+        if (document.visibilityState === 'visible') {
+          // Check connection health when page becomes visible again
+          checkConnection();
+        }
+      });
     }
     
     // Clean up
     return () => {
-      if (typeof document !== 'undefined') {
-        document.removeEventListener('visibilitychange', handleVisibilityChange);
+      if (reconnectTimeoutRef.current) {
+        clearTimeout(reconnectTimeoutRef.current);
       }
+      
+      if (pingIntervalRef.current) {
+        clearInterval(pingIntervalRef.current);
+      }
+      
+      if (typeof window !== 'undefined') {
+        window.removeEventListener('online', handleOnline);
+      }
+      
       disconnect();
     };
-  }, [connect, disconnect]);
+  }, [connect, disconnect, sendPing, checkConnection]);
   
   return {
     socketState,
