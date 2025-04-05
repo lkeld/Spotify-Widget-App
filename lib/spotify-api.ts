@@ -1,5 +1,4 @@
 import { logDebug, logError } from "./debug";
-import { useRef } from "react";
 
 // Cache configuration
 const CACHE_TTL = {
@@ -377,11 +376,11 @@ export const spotifyApi = {
 };
 
 // Create a message handler store
-const messageHandlersRef = useRef<Record<string, Set<(data: any) => void>>>({
+const messageHandlers: Record<string, Set<(data: any) => void>> = {
   playback: new Set(),
   queue: new Set(),
   devices: new Set(),
   ping: new Set(),
   error: new Set(),
   auth_success: new Set(),
-}); 
+}; 
